@@ -1,0 +1,222 @@
+name: Pull Request
+
+on:
+  pull_request:
+    types:
+      - opened
+      - ready_for_review
+      - reopened
+      - synchronize
+
+env:
+    COMPOSER_AUTH: '{"github-oauth": {"github.com": "${{secrets.COMPOSER_AUTH}}"} }'
+    DB_CONNECTION: "pgsql"
+    DB_DATABASE: "testing"
+    DB_HOST: "localhost"
+    DB_PASSWORD: "secret"
+    DB_USERNAME: "sail"
+    MAIL_FROM_ADDRESS: "support@carquant.com"
+    MAIL_FROM_NAME: "${APP_NAME}"
+    MAIL_REPLYTO_ADDRESS: "support@carquant.com"
+    TELESCOPE_DB_DATABASE: "testing"
+    TELESCOPE_DB_HOST: "localhost"
+    TELESCOPE_DB_PASSWORD: "secret"
+    TELESCOPE_DB_USERNAME: "sail"
+    TELESCOPE_ENABLED: false
+
+jobs:
+  cancel:
+    name: 'Cancel Previous Runs'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 3
+    steps:
+      - uses: styfle/cancel-workflow-action@0.9.1
+        with:
+          all_but_latest: true
+          access_token: ${{ github.token }}
+
+  task-check:
+    name: Tasks Completion
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: kentaro-m/task-completed-checker-action@v0.1.0
+        with:
+          repo-token: "${{ secrets.GITHUB_TOKEN }}"
+
+  phpunit:
+    name: Unit and Feature Tests
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      - name: Set up PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_pgsql, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick, calendar, pcov-1.0.10, sodium
+          coverage: pcov
+      - name: Start Redis
+        uses: supercharge/redis-github-action@1.4.0
+        with:
+          redis-version: 6
+          redis-port: 6379
+          redis-container-name: github-action-redis
+      - name: Copy .env
+        run: php -r "file_exists('.env') || copy('.env.example', '.env');"
+      - name: Cache Composer dependencies
+        uses: actions/cache@v2
+        with:
+          path: /tmp/composer-cache
+          key: ${{ runner.os }}-${{ hashFiles('**/composer.lock') }}
+      - name: Set Up Database
+        uses: danielweller-swp/postgresql-action@v1
+        with:
+          postgresql version: '14'
+          postgresql db: 'testing'
+          postgresql user: 'sail'
+          postgresql password: 'secret'
+          postgresql conf: 'max_connections=500'
+      - name: Directory Permissions
+        run: chmod -R 777 storage bootstrap/cache
+      - name: Temporary Storage Directories
+        run: |
+          mkdir -p storage/logs
+          mkdir -p storage/framework/cache/data
+          mkdir -p storage/framework/session
+          mkdir -p storage/framework/testing
+          mkdir -p storage/framework/views
+      - name: Install Dependencies
+        run: |
+          composer install
+      - name: Generate key
+        run: php artisan key:generate
+      - name: Optimize
+        run: php artisan optimize:clear
+      - name: Execute tests (Unit and Feature tests) via PHPUnit
+        run: php -dpcov.enabled=1 -dpcov.directory=. -dpcov.exclude="~vendor~" -d memory_limit=-1 artisan test --parallel --exclude-group=localOnly --coverage-clover=coverage.xml
+      - name: Run CodeCov Report
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: true
+          verbose: true
+
+  phpmd-linter:
+    name: PHPMD
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out code into the workspace
+        uses: actions/checkout@v3
+      - name: Run php check code with reviewdog
+        uses: GeneaLabs/action-reviewdog-phpmd@1.0.4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          level: 'warning'
+          reporter: github-pr-review
+          standard: 'phpmd.xml'
+          target_directory: '.'
+          exclude: '*_*.php,*.phpstorm.meta.php'
+
+  phpcs-linter:
+    name: PHPCS
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-22.04
+    env:
+      DB_CONNECTION: "sqlite"
+      DB_DATABASE: ":memory:"
+    steps:
+      - name: Set up PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_pgsql, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick, calendar
+      - name: Check out code into the workspace
+        uses: actions/checkout@v3
+      - name: Directory Permissions
+        run: chmod -R 777 storage bootstrap/cache
+      - name: Temporary Storage Directories
+        run: |
+          mkdir -p storage/logs
+          mkdir -p storage/framework/cache/data
+          mkdir -p storage/framework/session
+          mkdir -p storage/framework/testing
+          mkdir -p storage/framework/views
+      - name: Install dependencies
+        run: composer install --prefer-dist
+      - name: PHPCS code anlaysis with ReviewDog
+        uses: GeneaLabs/action-reviewdog-phpcs@1.1.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          level: "warning"
+          reporter: github-pr-review
+          standard: "./phpcs.xml"
+          target_directory: './app'
+          executable: './vendor/bin/phpcs'
+
+  phpstan-linter:
+    name: PHPStan
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out code into the workspace
+        uses: actions/checkout@v3
+      - name: Set up PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick, calendar
+      - name: Install Dependencies
+        run: |
+          composer install --no-interaction --no-scripts --no-progress --prefer-dist
+      - name: Run php check code with reviewdog
+        uses: GeneaLabs/action-reviewdog-phpstan@1.1.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          level: 'error'
+          reporter: github-pr-review
+          target_directory: 'src'
+
+  misspell:
+    name: Spellcheck
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out code.
+        uses: actions/checkout@v3
+      - name: misspell
+        uses: reviewdog/action-misspell@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          locale: "US"
+          reporter: github-pr-review
+          exclude: |
+            ./.github/*
+            ./.nova/*
+            ./.vscode/*
+            ./node_modules/*
+            ./public/*
+            ./storage/*
+            ./tools/*
+            ./vendor/*
+            ./package-lock.json
+            ./composer.lock
+            ./*.php
+
+  add-reviewer:
+    runs-on: ubuntu-latest
+    needs:
+      - phpunit
+      - misspell
+      - phpstan-linter
+      - phpcs-linter
+      - phpmd-linter
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ohnogumi/auto-reviewers@v0.0.5
+        with:
+          token: "${{ secrets.GITHUB_TOKEN }}" # "${{ secrets.PERSONAL_TOKEN }}"
+          config: .github/CODEOWNERS
