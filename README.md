@@ -1,4 +1,4 @@
-# CarQuant Portal
+# Codespaces Template for Laravel Apps
 
  ## Codespace Setup
  1. Make sure you are signing commits on all repositories, follow this guide:
@@ -22,4 +22,3 @@
  9. Copy the new HTTPS URL and set the `APP_URL` environment variable in `.env`.
  10. You should now be able to access Bid Manager via that URL in your browser,
    as well as via REST API calls.
-   
