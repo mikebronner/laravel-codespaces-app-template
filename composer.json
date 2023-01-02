@@ -4,21 +4,38 @@
     "description": "The Laravel Framework.",
     "keywords": ["framework", "laravel"],
     "license": "MIT",
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/laravel-shift/laravel-self-diagnosis"
+        }
+    ],
     "require": {
         "php": "^8.0.2",
         "guzzlehttp/guzzle": "^7.2",
         "laravel/framework": "^9.19",
         "laravel/sanctum": "^3.0",
-        "laravel/tinker": "^2.7"
+        "livewire/livewire": "^2.10"
     },
     "require-dev": {
+        "barryvdh/laravel-debugbar": "^3.6",
+        "barryvdh/laravel-ide-helper": "dev-master@dev",
+        "beyondcode/laravel-self-diagnosis": "dev-l9-compatibility@dev",
+        "brianium/paratest": "^6.4",
         "fakerphp/faker": "^1.9.1",
+        "genealabs/php-coding-standards": "dev-main@dev",
+        "laravel/breeze": "^1.9",
+        "laravel/dusk": "^6.23",
         "laravel/pint": "^1.0",
-        "laravel/sail": "^1.0.1",
+        "laravel/sail": "^1.14",
+        "laravel/tinker": "^2.7",
         "mockery/mockery": "^1.4.4",
         "nunomaduro/collision": "^6.1",
+        "phpmd/phpmd": "^2.12",
+        "phpstan/phpstan": "^1.6",
         "phpunit/phpunit": "^9.5.10",
-        "spatie/laravel-ignition": "^1.0"
+        "spatie/laravel-ignition": "^1.2",
+        "squizlabs/php_codesniffer": "^3.7"
     },
     "autoload": {
         "psr-4": {
@@ -38,7 +55,18 @@
             "@php artisan package:discover --ansi"
         ],
         "post-update-cmd": [
-            "@php artisan vendor:publish --tag=laravel-assets --ansi --force"
+            "@php artisan vendor:publish --tag=laravel-assets --ansi --force",
+            "@php artisan livewire:publish --assets",
+            "@php artisan storage:link --ansi",
+            "@php artisan migrate --force --ansi",
+            "@php artisan db:seed --force --ansi",
+            "@php artisan optimize:clear --ansi",
+            "@php artisan clear-compiled --ansi",
+            "@php artisan ide-helper:generate --ansi",
+            "@php artisan ide-helper:meta --ansi",
+            "rm -rf node_modules && npm install && npm run prod",
+            "@php artisan self-diagnosis --ansi",
+            "composer thanks"
         ],
         "post-root-package-install": [
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
@@ -57,7 +85,8 @@
         "preferred-install": "dist",
         "sort-packages": true,
         "allow-plugins": {
-            "pestphp/pest-plugin": true
+            "pestphp/pest-plugin": true,
+            "dealerdirect/phpcodesniffer-composer-installer": true
         }
     },
     "minimum-stability": "dev",
